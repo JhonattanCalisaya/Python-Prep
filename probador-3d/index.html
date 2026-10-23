@@ -97,6 +97,7 @@ button, input, select { font: inherit; color: inherit; }
 .card .pick:hover { border-color: var(--muted); }
 .card.on .pick { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 .card img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 8px; background: var(--bg); display: block; }
+.card img.cut { object-fit: contain; padding: 6px; }
 .card .nm { font-weight: 600; font-size: 13px; line-height: 1.25; overflow-wrap: anywhere; }
 .card .ty { font-size: 11px; color: var(--muted); }
 .card .tag { position: absolute; top: 10px; left: 10px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; background: color-mix(in srgb, var(--surface) 85%, transparent); padding: 2px 6px; border-radius: 6px; color: var(--muted); }
@@ -112,7 +113,14 @@ details.add summary::before { content: "+"; display: grid; place-items: center; 
 details.add[open] summary::before { content: "–"; }
 .add-form { display: flex; flex-direction: column; gap: 12px; padding: 0 14px 14px; }
 .drop { display: grid; place-items: center; text-align: center; min-height: 120px; border-radius: 10px; background: var(--bg); color: var(--muted); font-size: 13px; cursor: pointer; overflow: hidden; padding: 10px; }
-.drop img { max-height: 180px; border-radius: 8px; }
+.drop img { max-height: 200px; border-radius: 8px; background: repeating-conic-gradient(var(--line) 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
+.drop.small { min-height: 72px; }
+.drop.small img { max-height: 110px; }
+.photos { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+.photos .field > label { margin-bottom: 0; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; }
+.top-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field > label, .field legend { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; color: var(--muted); padding: 0; }
 .field input[type="text"], .field select { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 8px 10px; width: 100%; }
@@ -167,7 +175,7 @@ input[type="color"] { width: 100%; height: 36px; border: 1px solid var(--line); 
 <div class="app">
   <header class="top">
     <div class="brand"><span class="mark">Probador</span><span class="sub">Armario 3D</span></div>
-    <button id="saveLook" class="btn primary" type="button">Guardar look</button>
+    <div class="top-actions"><button id="uploadBtn" class="btn" type="button">Subir prenda</button><button id="saveLook" class="btn primary" type="button">Guardar look</button></div>
   </header>
 
   <section class="stage" aria-label="Vista de la modelo">
@@ -318,7 +326,8 @@ const lathe = (pts, segs) => { const g = new THREE.LatheGeometry(pts, segs); g.c
 const slice = (pts, y0, y1, off, flare) => pts
   .filter(p => p.y >= y0 && p.y <= y1)
   .map(p => new THREE.Vector2(Math.max(0.002, p.x + off + (flare ? flare((y1 - p.y) / (y1 - y0)) : 0)), p.y));
-function mesh(geo, mat) { const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; return m; }
+let currentItem = null;  // prenda que se está construyendo (para proyectar su foto)
+function mesh(geo, mat) { const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; m.userData.item = currentItem; return m; }
 
 const skinMat = new THREE.MeshPhysicalMaterial({ color: '#e8b998', roughness: 0.55, sheen: 0.3, sheenRoughness: 0.6, sheenColor: new THREE.Color('#ffd9cc') });
 const hairMat = new THREE.MeshStandardMaterial({ color: '#3b2a22', roughness: 0.6, side: THREE.DoubleSide });
@@ -397,26 +406,29 @@ function buildHair(style) {
 /* ---------------- Telas y texturas ---------------- */
 const texReady = new Map();   // id -> THREE.Texture ya decodificada
 const texPending = new Map();
+const texSrc = item => item.mode === 'proy' ? item.proj : item.mode === 'foto' ? item.tex : null;
 function ensureTex(item) {
-  if (!item.tex || item.mode !== 'foto') return Promise.resolve(null);
-  if (texReady.has(item.id)) return Promise.resolve(texReady.get(item.id));
-  if (!texPending.has(item.id)) {
-    texPending.set(item.id, new Promise(res => {
+  const src = texSrc(item);
+  if (!src) return Promise.resolve(null);
+  const key = item.id + item.mode;
+  if (texReady.has(key)) return Promise.resolve(texReady.get(key));
+  if (!texPending.has(key)) {
+    texPending.set(key, new Promise(res => {
       const img = new Image();
       img.onload = () => {
         const t = new THREE.Texture(img);
         t.colorSpace = THREE.SRGBColorSpace;
-        t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping;
+        if (item.mode === 'foto') t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping;
         t.anisotropy = 4;
         t.needsUpdate = true;
-        texReady.set(item.id, t);
+        texReady.set(key, t);
         res(t);
       };
       img.onerror = () => res(null);
-      img.src = item.tex;
+      img.src = src;
     }));
   }
-  return texPending.get(item.id);
+  return texPending.get(key);
 }
 const WHITE = new THREE.Color('#ffffff');
 function fabric(item, rep = [2, 1.5], opts = {}) {
@@ -425,10 +437,10 @@ function fabric(item, rep = [2, 1.5], opts = {}) {
     sheen: opts.sheen ?? 0.6, sheenRoughness: 0.75, clearcoat: opts.clearcoat ?? 0,
     side: THREE.DoubleSide,
   });
-  const base = item.mode === 'foto' ? texReady.get(item.id) : null;
+  const base = texReady.get(item.id + item.mode);
   if (base) {
     const t = base.clone();
-    t.repeat.set(rep[0], rep[1]);
+    if (item.mode === 'foto') t.repeat.set(rep[0], rep[1]);
     m.map = t;
   } else {
     m.color.set(item.color);
@@ -564,6 +576,40 @@ function addGlasses(item, round, dark) {
   W.torso.add(g);
 }
 
+/* ---------------- Proyección de la foto completa ----------------
+   La foto del frente se proyecta de frente sobre la prenda y la de la espalda por detrás,
+   como si se colocara la prenda real sobre la modelo. Textura: mitad izquierda = frente, derecha = espalda. */
+function projectUV(id) {
+  model.updateMatrixWorld(true);
+  const meshes = [];
+  for (const g of Object.values(W)) g.traverse(o => { if (o.isMesh && o.userData.item === id) meshes.push(o); });
+  const box = new THREE.Box3(), v = new THREE.Vector3();
+  const world = meshes.map(m => {
+    if (m.geometry.index) { const g = m.geometry.toNonIndexed(); m.geometry.dispose(); m.geometry = g; }
+    const pos = m.geometry.attributes.position, w = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
+      w[i * 3] = v.x; w[i * 3 + 1] = v.y; w[i * 3 + 2] = v.z;
+      box.expandByPoint(v);
+    }
+    return [m, w];
+  });
+  const min = box.min, size = box.getSize(new THREE.Vector3()), cz = (box.min.z + box.max.z) / 2;
+  for (const [m, w] of world) {
+    const n = w.length / 3, uv = new Float32Array(n * 2);
+    for (let t = 0; t < n; t += 3) {
+      const front = (w[t * 3 + 2] + w[t * 3 + 5] + w[t * 3 + 8]) / 3 >= cz;
+      for (let k = 0; k < 3; k++) {
+        const i = t + k;
+        const u = (w[i * 3] - min.x) / (size.x || 1), vv = (w[i * 3 + 1] - min.y) / (size.y || 1);
+        uv[i * 2] = front ? 0.004 + u * 0.488 : 0.508 + (1 - u) * 0.488;
+        uv[i * 2 + 1] = vv;
+      }
+    }
+    m.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  }
+}
+
 /* ---------------- Modelos 3D subidos (.glb) ---------------- */
 const FIT = { top: { y: 1.18, h: 0.6 }, bottom: { y: 0.5, h: 0.95 }, dress: { y: 0.82, h: 1.2 }, shoes: { y: 0.05, h: 0.1 }, glasses: { y: 1.645, w: 0.19, z: 0.11 }, hat: { y: 1.73, w: 0.25 } };
 const glbCache = new Map();
@@ -693,7 +739,10 @@ async function applyOutfit() {
         W.torso.add(c);
       }).catch(() => toast(`No se pudo abrir el modelo 3D de “${it.name}”.`));
     } else {
+      currentItem = it.id;
       BUILD[it.type]?.(it);
+      currentItem = null;
+      if (it.mode === 'proy') projectUV(it.id);
     }
   }
   if (hairG.userData.cap) hairG.userData.cap.visible = !worn.hat;
@@ -751,11 +800,18 @@ function renderPane() {
   const typeOpts = Object.entries(cat.types).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
   pane.innerHTML = `
     <div class="pane-head"><h2>${cat.label}</h2><p>${mine ? `${mine} ${mine === 1 ? 'prenda tuya' : 'prendas tuyas'} · ` : ''}Toca una prenda para probártela</p></div>
-    <details class="add" id="addBox">
-      <summary>Agregar prenda</summary>
+    <details class="add" id="addBox"${mine ? '' : ' open'}>
+      <summary>Subir foto de una prenda</summary>
       <form class="add-form" id="addForm" novalidate>
-        <label class="drop" for="f-photo"><span id="f-dropText">Toma o elige una foto de la prenda, extendida y con buena luz</span><img id="f-prev" alt="Vista previa de la prenda" hidden></label>
+        <div class="photos">
+          <div class="field"><label for="f-photo">Frente</label>
+            <label class="drop" for="f-photo"><span id="f-dropText">Toma o elige una foto de la prenda extendida sobre un fondo liso</span><img id="f-prev" alt="Vista previa del frente" hidden></label></div>
+          <div class="field"><label for="f-back">Espalda (opcional)</label>
+            <label class="drop small" for="f-back"><span id="f-backText">Foto de atrás</span><img id="f-backPrev" alt="Vista previa de la espalda" hidden></label></div>
+        </div>
         <input class="sr" id="f-photo" type="file" accept="image/*">
+        <input class="sr" id="f-back" type="file" accept="image/*">
+        <label class="check"><input id="f-bg" type="checkbox" checked> Quitar el fondo automáticamente</label>
         <div class="field"><label for="f-name">Nombre</label><input id="f-name" type="text" maxlength="40" autocomplete="off" placeholder="Ej.: Blusa de lino"></div>
         <div class="row2">
           <div class="field"><label for="f-type">Tipo</label><select id="f-type">${typeOpts}</select></div>
@@ -764,12 +820,13 @@ function renderPane() {
         ${COLOR_ONLY.has(tab) ? '' : `
         <fieldset class="field"><legend>Cómo usar la foto</legend>
           <div class="radios">
-            <label><input type="radio" name="f-mode" value="foto" checked> Tela de la foto</label>
+            <label><input type="radio" name="f-mode" value="proy" checked> Prenda completa</label>
+            <label><input type="radio" name="f-mode" value="foto"> Solo la tela, repetida</label>
             <label><input type="radio" name="f-mode" value="color"> Solo el color</label>
           </div>
         </fieldset>`}
         <div class="field"><label for="f-glb">Modelo 3D de la prenda (opcional, .glb)</label><input id="f-glb" type="file" accept=".glb,model/gltf-binary"></div>
-        <p class="help">El color se toma solo de la foto; puedes ajustarlo. Si subes un modelo 3D, se usa en vez de la forma estándar.</p>
+        <p class="help">“Prenda completa” pone la foto tal cual sobre la modelo: estampados, logos y diseños incluidos. Para mejores resultados, fotografía la prenda estirada, de frente, sobre una cama o pared lisa. Si subes un modelo 3D, se usa en vez de la forma estándar.</p>
         <p class="err" id="f-err" hidden></p>
         <button class="btn primary" type="submit">Agregar al armario</button>
       </form>
@@ -781,7 +838,7 @@ function cardHTML(it) {
   const on = worn[it.cat] === it.id;
   return `<div class="card${on ? ' on' : ''}">
     <button type="button" class="pick" data-id="${it.id}" aria-pressed="${on}">
-      <img src="${it.thumb}" alt="">
+      <img src="${it.thumb}" alt=""${it.sample ? '' : ' class="cut"'}>
       <span class="nm">${esc(it.name)}</span>
       <span class="ty">${CATS[it.cat].types[it.type] || ''}${it.glb ? ' · 3D' : ''}</span>
     </button>
@@ -804,7 +861,8 @@ $('#pane').addEventListener('click', async e => {
     const id = del.dataset.del;
     const it = itemById(id);
     items = items.filter(i => i.id !== id);
-    texReady.delete(id); texPending.delete(id); glbCache.delete(id);
+    for (const m of ['proy', 'foto']) { texReady.delete(id + m); texPending.delete(id + m); }
+    glbCache.delete(id);
     for (const k in worn) if (worn[k] === id) worn[k] = null;
     await DB.del('items', id);
     toast(`Eliminaste “${it ? it.name : 'la prenda'}”.`);
@@ -814,49 +872,117 @@ $('#pane').addEventListener('click', async e => {
   }
 });
 
-async function readPhoto(file) {
+const loadFile = file => new Promise((res, rej) => {
   const url = URL.createObjectURL(file);
-  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
-  URL.revokeObjectURL(url);
-  const scale = Math.min(1, 480 / Math.max(img.width, img.height));
-  const tc = document.createElement('canvas');
-  tc.width = Math.round(img.width * scale); tc.height = Math.round(img.height * scale);
-  tc.getContext('2d').drawImage(img, 0, 0, tc.width, tc.height);
-  // Tela: recorte cuadrado del centro, donde suele estar el tejido.
-  const side = Math.min(img.width, img.height) * 0.5;
-  const fc = document.createElement('canvas');
-  fc.width = fc.height = 512;
-  fc.getContext('2d').drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 512, 512);
-  const sc = document.createElement('canvas');
-  sc.width = sc.height = 12;
-  const sx = sc.getContext('2d');
-  sx.drawImage(fc, 0, 0, 12, 12);
-  const d = sx.getImageData(0, 0, 12, 12).data;
-  let r = 0, g = 0, b = 0;
-  for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
-  const n = d.length / 4;
-  const hex = '#' + [r, g, b].map(v => Math.round(v / n).toString(16).padStart(2, '0')).join('');
-  return { thumb: tc.toDataURL('image/jpeg', 0.82), tex: fc.toDataURL('image/jpeg', 0.85), color: hex };
+  const i = new Image();
+  i.onload = () => { URL.revokeObjectURL(url); res(i); };
+  i.onerror = e => { URL.revokeObjectURL(url); rej(e); };
+  i.src = url;
+});
+const hexOf = (r, g, b) => '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+
+// Recorta la prenda: quita el fondo liso conectado a los bordes y encuadra lo que queda.
+function cutout(img, removeBg) {
+  const s = Math.min(1, 512 / Math.max(img.width, img.height));
+  const w = Math.max(1, Math.round(img.width * s)), h = Math.max(1, Math.round(img.height * s));
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.drawImage(img, 0, 0, w, h);
+  const data = x.getImageData(0, 0, w, h), d = data.data;
+  const bg = new Uint8Array(w * h);
+  if (removeBg) {
+    let R = 0, G = 0, B = 0, n = 0;
+    const add = i => { R += d[i * 4]; G += d[i * 4 + 1]; B += d[i * 4 + 2]; n++; };
+    for (let X = 0; X < w; X++) { add(X); add((h - 1) * w + X); }
+    for (let Y = 0; Y < h; Y++) { add(Y * w); add(Y * w + w - 1); }
+    R /= n; G /= n; B /= n;
+    const close = i => { const a = d[i * 4] - R, b = d[i * 4 + 1] - G, c2 = d[i * 4 + 2] - B; return a * a + b * b + c2 * c2 < 3025; };
+    const stack = [];
+    const push = i => { if (!bg[i] && close(i)) { bg[i] = 1; stack.push(i); } };
+    for (let X = 0; X < w; X++) { push(X); push((h - 1) * w + X); }
+    for (let Y = 0; Y < h; Y++) { push(Y * w); push(Y * w + w - 1); }
+    while (stack.length) {
+      const i = stack.pop(), X = i % w;
+      if (X > 0) push(i - 1);
+      if (X < w - 1) push(i + 1);
+      if (i >= w) push(i - w);
+      if (i < w * (h - 1)) push(i + w);
+    }
+    let cnt = 0;
+    for (let i = 0; i < bg.length; i++) cnt += bg[i];
+    if (cnt < bg.length * 0.03 || cnt > bg.length * 0.95) bg.fill(0);
+  }
+  let minX = w, minY = h, maxX = -1, maxY = -1, r = 0, g = 0, b = 0, m = 0;
+  for (let i = 0; i < bg.length; i++) {
+    if (bg[i]) { d[i * 4 + 3] = 0; continue; }
+    const X = i % w, Y = (i / w) | 0;
+    if (X < minX) minX = X; if (X > maxX) maxX = X; if (Y < minY) minY = Y; if (Y > maxY) maxY = Y;
+    r += d[i * 4]; g += d[i * 4 + 1]; b += d[i * 4 + 2]; m++;
+  }
+  x.putImageData(data, 0, 0);
+  const cw = maxX - minX + 1, ch = maxY - minY + 1;
+  const prev = document.createElement('canvas');
+  prev.width = cw; prev.height = ch;
+  prev.getContext('2d').drawImage(c, minX, minY, cw, ch, 0, 0, cw, ch);
+  const color = hexOf(r / m, g / m, b / m);
+  const fill = document.createElement('canvas');
+  fill.width = cw; fill.height = ch;
+  const fx = fill.getContext('2d');
+  fx.fillStyle = color;
+  fx.fillRect(0, 0, cw, ch);
+  fx.drawImage(prev, 0, 0);
+  return { preview: prev.toDataURL('image/png'), fill, color };
+}
+
+// Arma las texturas de una prenda a partir de sus fotos.
+function buildTextures(front, back) {
+  const proj = document.createElement('canvas');
+  proj.width = 1024; proj.height = 512;
+  const px = proj.getContext('2d');
+  px.drawImage(front.fill, 0, 0, 512, 512);
+  px.drawImage((back || front).fill, 512, 0, 512, 512);
+  const f = front.fill, side = Math.min(f.width, f.height) * 0.5;
+  const tile = document.createElement('canvas');
+  tile.width = tile.height = 512;
+  tile.getContext('2d').drawImage(f, (f.width - side) / 2, (f.height - side) / 2, side, side, 0, 0, 512, 512);
+  return { proj: proj.toDataURL('image/jpeg', 0.88), tex: tile.toDataURL('image/jpeg', 0.85) };
 }
 
 function wireAddForm() {
   const form = $('#addForm');
   if (!form) return;
-  let photo = null, glb = null;
+  let frontImg = null, backImg = null, front = null, back = null, glb = null;
   const err = msg => { const p = $('#f-err'); p.textContent = msg || ''; p.hidden = !msg; };
+  const process = () => {
+    const removeBg = $('#f-bg').checked;
+    if (frontImg) {
+      front = cutout(frontImg, removeBg);
+      $('#f-prev').src = front.preview; $('#f-prev').hidden = false; $('#f-dropText').hidden = true;
+      $('#f-color').value = front.color;
+    }
+    if (backImg) {
+      back = cutout(backImg, removeBg);
+      $('#f-backPrev').src = back.preview; $('#f-backPrev').hidden = false; $('#f-backText').hidden = true;
+    }
+  };
   $('#f-photo').addEventListener('change', async e => {
     const f = e.target.files[0];
     if (!f) return;
     try {
-      photo = await readPhoto(f);
-      $('#f-prev').src = photo.thumb;
-      $('#f-prev').hidden = false;
-      $('#f-dropText').hidden = true;
-      $('#f-color').value = photo.color;
+      frontImg = await loadFile(f);
+      process();
       if (!$('#f-name').value) $('#f-name').value = f.name.replace(/\.[^.]+$/, '').slice(0, 40);
       err('');
     } catch { err('No se pudo leer esa imagen. Prueba con una foto JPG o PNG.'); }
   });
+  $('#f-back').addEventListener('change', async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try { backImg = await loadFile(f); process(); err(''); }
+    catch { err('No se pudo leer la foto de la espalda. Prueba con un JPG o PNG.'); }
+  });
+  $('#f-bg').addEventListener('change', process);
   $('#f-glb').addEventListener('change', async e => {
     const f = e.target.files[0];
     glb = f ? await f.arrayBuffer() : null;
@@ -865,14 +991,15 @@ function wireAddForm() {
   form.addEventListener('submit', async e => {
     e.preventDefault();
     const name = $('#f-name').value.trim();
-    if (!photo && !glb) return err('Agrega una foto de la prenda (o un modelo 3D).');
+    if (!front && !glb) return err('Agrega una foto de la prenda (o un modelo 3D).');
     if (!name) return err('Escribe un nombre para la prenda.');
-    const mode = COLOR_ONLY.has(tab) || !photo ? 'color' : (form.querySelector('[name="f-mode"]:checked')?.value || 'foto');
+    const mode = COLOR_ONLY.has(tab) || !front ? 'color' : (form.querySelector('[name="f-mode"]:checked')?.value || 'proy');
     const color = $('#f-color').value;
+    const tx = front ? buildTextures(front, back) : {};
     const it = {
       id: uid(), cat: tab, type: $('#f-type').value, name, mode, color,
-      thumb: photo ? photo.thumb : swatchCanvas(null, color).toDataURL('image/jpeg', 0.9),
-      tex: photo ? photo.tex : null, glb: glb || null, created: Date.now(),
+      thumb: front ? front.preview : swatchCanvas(null, color).toDataURL('image/jpeg', 0.9),
+      tex: tx.tex || null, proj: tx.proj || null, glb: glb || null, created: Date.now(),
     };
     items.push(it);
     await DB.put('items', it);
@@ -881,6 +1008,13 @@ function wireAddForm() {
     toggleWear(it.id);
   });
 }
+$('#uploadBtn').addEventListener('click', () => {
+  if (!CATS[tab]) { tab = 'top'; renderTabs(); renderPane(); }
+  const box = $('#addBox');
+  box.open = true;
+  box.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });
+  $('#f-photo').click();
+});
 
 /* ---- Modelo ---- */
 const SKINS = ['#f4dac6', '#e8b998', '#cf9670', '#a8704a', '#76492f', '#4b2e1f'];
