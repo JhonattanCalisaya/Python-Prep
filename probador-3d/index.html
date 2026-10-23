@@ -148,6 +148,33 @@ input[type="color"] { width: 100%; height: 36px; border: 1px solid var(--line); 
 .range input { flex: 1; min-width: 0; accent-color: var(--accent); }
 .range output { font-variant-numeric: tabular-nums; min-width: 6ch; text-align: right; font-weight: 600; }
 
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips label { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.chips input { position: absolute; opacity: 0; pointer-events: none; }
+.chips label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.chips label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.suggest { border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.suggest h3 { margin: 0; font-family: var(--font-display); font-weight: 500; font-size: 19px; }
+.suggest ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.suggest li { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 13px; }
+.suggest li img { width: 36px; height: 44px; object-fit: contain; border-radius: 6px; background: var(--bg); }
+.suggest li .k { font-size: 11px; color: var(--muted); }
+.acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.week-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.week-nav strong { font-size: 14px; font-variant-numeric: tabular-nums; }
+.days { display: flex; flex-direction: column; gap: 8px; }
+.day { display: grid; grid-template-columns: 52px 54px minmax(0, 1fr); gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 12px; padding: 8px; }
+.day.today { border-color: var(--accent); }
+.day .dt { text-align: center; line-height: 1.1; }
+.day .dt b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.day .dt span { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; }
+.day .ph { width: 54px; height: 72px; border-radius: 8px; background: var(--bg); object-fit: cover; display: grid; place-items: center; color: var(--muted); font-size: 18px; }
+.day p { margin: 0 0 6px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.day .warn { color: var(--accent); font-weight: 600; }
+.stat { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.stat div { background: var(--bg); border-radius: 10px; padding: 10px; }
+.stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 11px; color: var(--muted); }
 .looks { display: flex; flex-direction: column; gap: 10px; }
 .look { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 8px; align-items: center; }
 .look img { width: 72px; height: 96px; object-fit: cover; border-radius: 8px; background: var(--bg); }
@@ -228,6 +255,20 @@ const CATS = {
   hat:     { label: 'Gorras y sombreros', tab: 'Gorras', types: { gorra: 'Gorra', sombrero: 'Sombrero', boina: 'Boina' } },
 };
 const COLOR_ONLY = new Set(['glasses']);
+const OCCS = { casual: 'Casual', trabajo: 'Trabajo', cita: 'Cita', fiesta: 'Fiesta' };
+const CLIMAS = { calor: 'Calor', templado: 'Templado', frio: 'Frío' };
+// Etiquetas sugeridas por tipo de prenda (ella puede cambiarlas al subirla).
+const TYPE_TAGS = {
+  camiseta: [['casual'], ['calor', 'templado']], blusa: [['trabajo', 'cita'], ['calor', 'templado']],
+  crop: [['casual', 'fiesta'], ['calor']], chaqueta: [['casual', 'trabajo'], ['frio', 'templado']],
+  pantalon: [['casual', 'trabajo', 'cita'], ['templado', 'frio']], short: [['casual'], ['calor']],
+  falda: [['casual', 'cita'], ['calor', 'templado']], faldaLarga: [['trabajo', 'cita', 'fiesta'], ['templado', 'frio']],
+  vestidoCorto: [['cita', 'fiesta'], ['calor', 'templado']], vestidoLargo: [['cita', 'fiesta'], ['templado', 'calor']],
+  zapatillas: [['casual'], ['calor', 'templado', 'frio']], botas: [['casual', 'trabajo', 'cita'], ['frio', 'templado']],
+  tacones: [['trabajo', 'cita', 'fiesta'], ['calor', 'templado']],
+  redondos: [['casual', 'trabajo'], ['calor', 'templado', 'frio']], cuadrados: [['casual', 'trabajo'], ['calor', 'templado', 'frio']],
+  sol: [['casual'], ['calor']], gorra: [['casual'], ['calor']], sombrero: [['casual', 'cita'], ['calor']], boina: [['casual', 'cita'], ['frio', 'templado']],
+};
 
 /* ---------------- Almacenamiento local (IndexedDB) ---------------- */
 const DB = (() => {
@@ -683,6 +724,7 @@ const SAMPLES = [
   { id: 'ej16', cat: 'hat', type: 'gorra', name: 'Gorra beige', color: '#d8c7a6' },
   { id: 'ej17', cat: 'hat', type: 'sombrero', name: 'Sombrero de paja', color: '#d9bf86' },
 ].map(s => {
+  [s.occ, s.clima] = TYPE_TAGS[s.type];
   const url = swatchCanvas(s.pattern, s.color).toDataURL('image/jpeg', 0.9);
   return { mode: 'color', ...s, sample: true, thumb: url, tex: s.pattern ? url : null };
 });
@@ -692,7 +734,11 @@ let items = [];
 let looks = [];
 let worn = { top: 'ej1', bottom: 'ej5', dress: null, shoes: 'ej11', glasses: null, hat: null };
 let look = { skin: '#e8b998', hair: '#3b2a22', hairStyle: 'largo', height: 168, build: 100, photo: null };
-let tab = 'top';
+let tab = 'stylist';
+let plans = {};        // 'AAAA-MM-DD' -> { worn, thumb }
+let weekOffset = 0;
+let stylistPick = { occ: '', clima: '' };
+let lastSuggestion = null;
 let pickMode = 'skin';
 const itemById = id => items.find(i => i.id === id);
 
@@ -763,11 +809,12 @@ function toggleWear(id) {
 }
 
 /* ---------------- Interfaz ---------------- */
-const TABS = [...Object.keys(CATS), 'looks', 'model'];
-const tabLabel = t => t === 'looks' ? 'Looks' : t === 'model' ? 'Modelo' : CATS[t].tab;
+const TABS = ['stylist', ...Object.keys(CATS), 'looks', 'week', 'model'];
+const EXTRA_TABS = { stylist: 'Estilista', looks: 'Looks', week: 'Semana', model: 'Modelo' };
+const tabLabel = t => EXTRA_TABS[t] || CATS[t].tab;
 function renderTabs() {
   $('#tabs').innerHTML = TABS.map(t => {
-    const n = t === 'looks' ? looks.length : t === 'model' ? '' : items.filter(i => i.cat === t).length;
+    const n = t === 'looks' ? looks.length : EXTRA_TABS[t] ? '' : items.filter(i => i.cat === t).length;
     return `<button type="button" role="tab" id="tab-${t}" data-tab="${t}" aria-selected="${t === tab}">${tabLabel(t)}${n !== '' ? `<span class="n">${n}</span>` : ''}</button>`;
   }).join('');
 }
@@ -794,6 +841,8 @@ function renderPane() {
   pane.setAttribute('aria-labelledby', `tab-${tab}`);
   if (tab === 'model') return renderModelPane(pane);
   if (tab === 'looks') return renderLooksPane(pane);
+  if (tab === 'stylist') return renderStylistPane(pane);
+  if (tab === 'week') return renderWeekPane(pane);
   const cat = CATS[tab];
   const list = items.filter(i => i.cat === tab);
   const mine = list.filter(i => !i.sample).length;
@@ -825,6 +874,8 @@ function renderPane() {
             <label><input type="radio" name="f-mode" value="color"> Solo el color</label>
           </div>
         </fieldset>`}
+        <fieldset class="field"><legend>Ocasión</legend><div class="chips" id="f-occ">${Object.entries(OCCS).map(([k, v]) => `<label><input type="checkbox" value="${k}">${v}</label>`).join('')}</div></fieldset>
+        <fieldset class="field"><legend>Clima</legend><div class="chips" id="f-clima">${Object.entries(CLIMAS).map(([k, v]) => `<label><input type="checkbox" value="${k}">${v}</label>`).join('')}</div></fieldset>
         <div class="field"><label for="f-glb">Modelo 3D de la prenda (opcional, .glb)</label><input id="f-glb" type="file" accept=".glb,model/gltf-binary"></div>
         <p class="help">“Prenda completa” pone la foto tal cual sobre la modelo: estampados, logos y diseños incluidos. Para mejores resultados, fotografía la prenda estirada, de frente, sobre una cama o pared lisa. Si subes un modelo 3D, se usa en vez de la forma estándar.</p>
         <p class="err" id="f-err" hidden></p>
@@ -840,7 +891,7 @@ function cardHTML(it) {
     <button type="button" class="pick" data-id="${it.id}" aria-pressed="${on}">
       <img src="${it.thumb}" alt=""${it.sample ? '' : ' class="cut"'}>
       <span class="nm">${esc(it.name)}</span>
-      <span class="ty">${CATS[it.cat].types[it.type] || ''}${it.glb ? ' · 3D' : ''}</span>
+      <span class="ty">${CATS[it.cat].types[it.type] || ''}${it.glb ? ' · 3D' : ''}${usage(it.id).count ? ` · usada ${usage(it.id).count}×` : ''}</span>
     </button>
     ${it.sample ? '<span class="tag">Ejemplo</span>' : ''}
     ${on ? '<span class="on-badge">Puesta</span>' : ''}
@@ -983,6 +1034,13 @@ function wireAddForm() {
     catch { err('No se pudo leer la foto de la espalda. Prueba con un JPG o PNG.'); }
   });
   $('#f-bg').addEventListener('change', process);
+  const presetTags = () => {
+    const [o, c] = TYPE_TAGS[$('#f-type').value] || [[], []];
+    form.querySelectorAll('#f-occ input').forEach(i => { i.checked = o.includes(i.value); });
+    form.querySelectorAll('#f-clima input').forEach(i => { i.checked = c.includes(i.value); });
+  };
+  presetTags();
+  $('#f-type').addEventListener('change', presetTags);
   $('#f-glb').addEventListener('change', async e => {
     const f = e.target.files[0];
     glb = f ? await f.arrayBuffer() : null;
@@ -999,6 +1057,8 @@ function wireAddForm() {
     const it = {
       id: uid(), cat: tab, type: $('#f-type').value, name, mode, color,
       thumb: front ? front.preview : swatchCanvas(null, color).toDataURL('image/jpeg', 0.9),
+      occ: [...form.querySelectorAll('#f-occ input:checked')].map(i => i.value),
+      clima: [...form.querySelectorAll('#f-clima input:checked')].map(i => i.value),
       tex: tx.tex || null, proj: tx.proj || null, glb: glb || null, created: Date.now(),
     };
     items.push(it);
@@ -1132,8 +1192,7 @@ $('#pane').addEventListener('click', async e => {
     renderPane();
   }
 });
-$('#saveLook').addEventListener('click', async () => {
-  if (!Object.values(worn).some(Boolean)) return toast('Ponle al menos una prenda para guardar el look.');
+function snapshot() {
   renderer.render(scene, camera);
   const src = renderer.domElement, tw = 180, th = 240;
   const c = document.createElement('canvas');
@@ -1143,13 +1202,216 @@ $('#saveLook').addEventListener('click', async () => {
   x.fillRect(0, 0, tw, th);
   const sh = src.height, sw = sh * tw / th;
   x.drawImage(src, (src.width - sw) / 2, 0, sw, sh, 0, 0, tw, th);
-  const l = { id: uid(), name: `Look ${looks.length + 1}`, worn: { ...worn }, thumb: c.toDataURL('image/jpeg', 0.85), created: Date.now() };
+  return c.toDataURL('image/jpeg', 0.85);
+}
+$('#saveLook').addEventListener('click', async () => {
+  if (!Object.values(worn).some(Boolean)) return toast('Ponle al menos una prenda para guardar el look.');
+  const l = { id: uid(), name: `Look ${looks.length + 1}`, worn: { ...worn }, thumb: snapshot(), created: Date.now() };
   looks.push(l);
   await DB.put('looks', l);
   renderTabs();
   if (tab === 'looks') renderPane();
   toast(`Guardaste “${l.name}”.`);
 });
+
+/* ---------------- Uso de prendas (para no repetir) ---------------- */
+const dayKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const fromKey = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); };
+const todayKey = () => dayKey(new Date());
+const DAY_MS = 86400000;
+const fmtDay = k => fromKey(k).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'short' });
+// Veces usada y último uso, contando solo los días ya pasados o de hoy en el plan.
+function usage(id) {
+  let count = 0, last = null;
+  const t = todayKey();
+  for (const [k, p] of Object.entries(plans)) {
+    if (k > t || !Object.values(p.worn).includes(id)) continue;
+    count++;
+    if (!last || k > last) last = k;
+  }
+  return { count, last };
+}
+const signature = w => ['top', 'bottom', 'dress'].map(c => w[c] || '-').join('|');
+// ¿Este conjunto ya está en el plan dentro de 14 días alrededor de la fecha?
+function repeatNear(w, key) {
+  const sig = signature(w), t = fromKey(key).getTime();
+  return Object.keys(plans).filter(k => k !== key && signature(plans[k].worn) === sig && Math.abs(fromKey(k).getTime() - t) <= 14 * DAY_MS).sort();
+}
+async function savePlans() { await DB.put('prefs', plans, 'plans'); }
+async function planDay(key, w, thumb) {
+  plans[key] = { worn: { ...w }, thumb };
+  await savePlans();
+  const rep = repeatNear(w, key);
+  toast(rep.length ? `Planeado. Ojo: ya llevas este look el ${fmtDay(rep[0])}.` : `Planeado para el ${fmtDay(key)}.`);
+}
+
+/* ---------------- Estilista: arma looks con su armario ---------------- */
+function hsl(hex) {
+  const n = parseInt(hex.slice(1), 16), r = (n >> 16) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  if (!d) return { h: 0, s: 0, l };
+  const s = d / (1 - Math.abs(2 * l - 1));
+  const h = mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { h: h * 60, s, l };
+}
+const isNeutral = c => c.s < 0.2 || c.l < 0.16 || c.l > 0.88;
+// Qué tan bien combinan dos colores (0–1): neutros con todo, análogos y complementarios bien.
+function harmony(a, b) {
+  const x = hsl(a), y = hsl(b);
+  if (isNeutral(x) || isNeutral(y)) return 1;
+  const d = Math.min(Math.abs(x.h - y.h), 360 - Math.abs(x.h - y.h));
+  if (d < 25) return 0.75;
+  if (d > 150) return 0.9;
+  if (d < 60) return 0.8;
+  return 0.4;
+}
+const fits = (it, occ, clima) => (!occ || !it.occ?.length || it.occ.includes(occ)) && (!clima || !it.clima?.length || it.clima.includes(clima));
+function poolFor(cat, occ, clima) {
+  const all = items.filter(i => i.cat === cat);
+  let p = all.filter(i => fits(i, occ, clima));
+  if (!p.length) p = all.filter(i => fits(i, '', clima));
+  return p;
+}
+// Prendas que no usa hace tiempo pesan más: así no repite outfits.
+function freshness(id) {
+  const { last } = usage(id);
+  if (!last) return 2;
+  const days = (Date.now() - fromKey(last).getTime()) / DAY_MS;
+  return 0.3 + Math.min(days, 21) / 12;
+}
+function pick(pool, score = () => 1) {
+  if (!pool.length) return null;
+  const w = pool.map(i => Math.max(0.01, freshness(i.id) * score(i) * (0.6 + Math.random() * 0.8)));
+  let r = Math.random() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < pool.length; i++) { r -= w[i]; if (r <= 0) return pool[i]; }
+  return pool[pool.length - 1];
+}
+function suggest(occ, clima) {
+  const prev = lastSuggestion && signature(lastSuggestion);
+  let best = null;
+  for (let tries = 0; tries < 12; tries++) {
+    const out = { top: null, bottom: null, dress: null, shoes: null, glasses: null, hat: null };
+    const tops = poolFor('top', occ, clima), bottoms = poolFor('bottom', occ, clima), dresses = poolFor('dress', occ, clima);
+    const useDress = dresses.length && (!tops.length || !bottoms.length || Math.random() < 0.35);
+    let base;
+    if (useDress) { base = pick(dresses); out.dress = base.id; }
+    else {
+      base = pick(tops);
+      const bottom = base && pick(bottoms, b => harmony(base.color, b.color));
+      out.top = base?.id || null;
+      out.bottom = bottom?.id || null;
+    }
+    const shoe = pick(poolFor('shoes', occ, clima), s => base ? harmony(base.color, s.color) : 1);
+    out.shoes = shoe?.id || null;
+    if (Math.random() < (clima === 'calor' ? 0.55 : 0.25)) out.glasses = pick(poolFor('glasses', occ, clima))?.id || null;
+    if (Math.random() < (clima === 'calor' ? 0.4 : 0.15)) out.hat = pick(poolFor('hat', occ, clima))?.id || null;
+    best = out;
+    if (signature(out) !== prev) break;
+  }
+  return best;
+}
+function stylistReason(w) {
+  const list = Object.values(w).filter(Boolean).map(itemById).filter(Boolean);
+  const unused = list.filter(i => !usage(i.id).count && !i.sample);
+  if (unused.length) return `Incluye ${unused.length === 1 ? 'una prenda tuya que aún no has usado' : `${unused.length} prendas tuyas que aún no has usado`}.`;
+  const old = list.map(i => usage(i.id).last).filter(Boolean).sort()[0];
+  return old ? `Prioricé prendas que no usas desde el ${fmtDay(old)}.` : 'Combiné colores que van bien juntos.';
+}
+function renderStylistPane(pane) {
+  const radios = (name, map, val) => `<label><input type="radio" name="${name}" value=""${!val ? ' checked' : ''}>Cualquiera</label>` +
+    Object.entries(map).map(([k, v]) => `<label><input type="radio" name="${name}" value="${k}"${val === k ? ' checked' : ''}>${v}</label>`).join('');
+  const s = lastSuggestion;
+  const list = s ? Object.entries(s).filter(([, v]) => v).map(([c, v]) => [c, itemById(v)]).filter(([, i]) => i) : [];
+  const t = todayKey();
+  pane.innerHTML = `
+    <div class="pane-head"><h2>¿Qué me pongo?</h2><p>Elige la ocasión y el clima, y armo un look con tu armario, sin repetir lo que usaste hace poco.</p></div>
+    <fieldset class="field"><legend>Ocasión</legend><div class="chips">${radios('s-occ', OCCS, stylistPick.occ)}</div></fieldset>
+    <fieldset class="field"><legend>Clima</legend><div class="chips">${radios('s-clima', CLIMAS, stylistPick.clima)}</div></fieldset>
+    <button type="button" class="btn primary" id="s-go">${s ? 'Armar otro look' : 'Armar look'}</button>
+    ${s ? `<div class="suggest">
+      <h3>Tu look sugerido</h3>
+      <ul>${list.map(([c, i]) => `<li><img src="${i.thumb}" alt=""><span>${esc(i.name)}<br><span class="k">${CATS[c].tab}</span></span><span class="k">${usage(i.id).count ? `usada ${usage(i.id).count}×` : 'sin usar'}</span></li>`).join('')}</ul>
+      <p class="help">${stylistReason(s)}</p>
+      <div class="acts">
+        <button type="button" class="btn small primary" data-plan-today>${plans[t] ? 'Cambiar el plan de hoy' : 'Me lo pongo hoy'}</button>
+        <button type="button" class="btn small" data-save-suggest>Guardar look</button>
+      </div>
+    </div>` : `<div class="empty"><strong>Tu estilista está lista</strong>Toca “Armar look” y la modelo se viste sola. Si no te gusta, pide otro.</div>`}`;
+}
+$('#pane').addEventListener('change', e => {
+  if (e.target.name === 's-occ') stylistPick.occ = e.target.value;
+  if (e.target.name === 's-clima') stylistPick.clima = e.target.value;
+});
+$('#pane').addEventListener('click', async e => {
+  if (e.target.closest('#s-go')) {
+    lastSuggestion = suggest(stylistPick.occ, stylistPick.clima);
+    worn = { ...lastSuggestion };
+    await applyOutfit();
+    renderPane();
+    return;
+  }
+  if (e.target.closest('[data-plan-today]')) {
+    await planDay(todayKey(), worn, snapshot());
+    renderPane();
+    return;
+  }
+  if (e.target.closest('[data-save-suggest]')) { $('#saveLook').click(); return; }
+  const pl = e.target.closest('[data-plan]');
+  if (pl) { await planDay(pl.dataset.plan, worn, snapshot()); renderPane(); return; }
+  const wr = e.target.closest('[data-wearday]');
+  if (wr) {
+    const p = plans[wr.dataset.wearday];
+    worn = { top: null, bottom: null, dress: null, shoes: null, glasses: null, hat: null };
+    for (const [k, v] of Object.entries(p.worn)) if (v && itemById(v)) worn[k] = v;
+    applyOutfit();
+    return;
+  }
+  const un = e.target.closest('[data-unplan]');
+  if (un) { delete plans[un.dataset.unplan]; await savePlans(); renderPane(); return; }
+  const wk = e.target.closest('[data-week]');
+  if (wk) { weekOffset += +wk.dataset.week; renderPane(); }
+});
+
+/* ---------------- Semana: planear outfits ---------------- */
+function renderWeekPane(pane) {
+  const now = new Date();
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7) + weekOffset * 7);
+  const days = Array.from({ length: 7 }, (_, i) => dayKey(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i)));
+  const t = todayKey();
+  const range = `${fromKey(days[0]).toLocaleDateString('es', { day: 'numeric', month: 'short' })} – ${fromKey(days[6]).toLocaleDateString('es', { day: 'numeric', month: 'short' })}`;
+  const past = Object.keys(plans).filter(k => k <= t);
+  const mineIds = items.filter(i => !i.sample).map(i => i.id);
+  const usedIds = new Set(past.flatMap(k => Object.values(plans[k].worn)));
+  const forgotten = mineIds.filter(id => !usedIds.has(id)).length;
+  const sigs = past.map(k => signature(plans[k].worn));
+  pane.innerHTML = `
+    <div class="pane-head"><h2>Mi semana</h2><p>Planea qué ponerte cada día. Te aviso si repites un look en menos de dos semanas.</p></div>
+    <div class="stat">
+      <div><b>${past.length}</b><span>días vestidos</span></div>
+      <div><b>${new Set(sigs).size}</b><span>looks distintos</span></div>
+      <div><b>${forgotten}</b><span>prendas tuyas sin usar</span></div>
+    </div>
+    <div class="week-nav">
+      <button type="button" class="btn small" data-week="-1" aria-label="Semana anterior">‹ Anterior</button>
+      <strong>${range}</strong>
+      <button type="button" class="btn small" data-week="1" aria-label="Semana siguiente">Siguiente ›</button>
+    </div>
+    <div class="days">${days.map(k => {
+      const p = plans[k], d = fromKey(k);
+      const names = p ? Object.values(p.worn).filter(Boolean).map(itemById).filter(Boolean).map(i => esc(i.name)).join(' · ') : '';
+      const rep = p ? repeatNear(p.worn, k) : [];
+      return `<div class="day${k === t ? ' today' : ''}">
+        <div class="dt"><span>${d.toLocaleDateString('es', { weekday: 'short' }).replace('.', '')}</span><b>${d.getDate()}</b></div>
+        ${p ? `<img class="ph" src="${p.thumb}" alt="">` : '<div class="ph" aria-hidden="true">+</div>'}
+        <div>
+          <p>${p ? names || 'Sin prendas' : k === t ? 'Hoy, sin planear' : 'Sin planear'}${rep.length ? `<br><span class="warn">Repite el look del ${fmtDay(rep[0])}</span>` : ''}</p>
+          <div class="acts">${p
+            ? `<button type="button" class="btn small" data-wearday="${k}">Ver en la modelo</button><button type="button" class="btn small" data-plan="${k}">Cambiar por el actual</button><button type="button" class="btn small" data-unplan="${k}">Quitar</button>`
+            : `<button type="button" class="btn small" data-plan="${k}">Planear con el look actual</button>`}</div>
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+}
 
 /* ---------------- Giro 360° ---------------- */
 const angle = $('#angle'), angleOut = $('#angleOut'), spinBtn = $('#spin');
@@ -1209,7 +1471,8 @@ function toast(msg) {
 
 /* ---------------- Inicio ---------------- */
 async function init() {
-  const [mine, prefs, savedLooks] = await Promise.all([DB.all('items'), DB.get('prefs', 'state'), DB.all('looks')]);
+  const [mine, prefs, savedLooks, savedPlans] = await Promise.all([DB.all('items'), DB.get('prefs', 'state'), DB.all('looks'), DB.get('prefs', 'plans')]);
+  plans = savedPlans || {};
   items = [...SAMPLES, ...(mine || []).sort((a, b) => a.created - b.created)];
   looks = savedLooks || [];
   if (prefs) {
