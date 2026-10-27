@@ -417,6 +417,25 @@ function boneGroup(name) {
   return 'head';
 }
 
+// El visor de artefactos no sirve .glb ni deja cargar data: URIs, así que la modelo viene
+// como JSON (glTF + binario en base64) y aquí se arma un GLB en memoria.
+async function loadAvatarScene() {
+  const res = await fetch(AV + 'modelo.json');
+  if (!res.ok) throw new Error(`modelo.json respondió ${res.status}`);
+  const { gltf, bin } = await res.json();
+  const raw = atob(bin), data = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) data[i] = raw.charCodeAt(i);
+  let json = new TextEncoder().encode(JSON.stringify(gltf));
+  const jl = Math.ceil(json.length / 4) * 4, bl = Math.ceil(data.length / 4) * 4;
+  const glb = new Uint8Array(12 + 8 + jl + 8 + bl), dv = new DataView(glb.buffer);
+  dv.setUint32(0, 0x46546C67, true); dv.setUint32(4, 2, true); dv.setUint32(8, glb.length, true);
+  dv.setUint32(12, jl, true); dv.setUint32(16, 0x4E4F534A, true);
+  glb.fill(0x20, 20, 20 + jl); glb.set(json, 20);
+  dv.setUint32(20 + jl, bl, true); dv.setUint32(24 + jl, 0x004E4942, true);
+  glb.set(data, 28 + jl);
+  return new Promise((ok, fail) => gltfLoader.parse(glb.buffer, '', g => ok(g.scene), fail));
+}
+
 let body = null;  // superficie del cuerpo ya posado: vértices soldados, normales, zona y medidas
 async function loadAvatar() {
   bodyMat.map = avTex('body_color.jpg');
@@ -424,7 +443,7 @@ async function loadAvatar() {
   headMat.map = avTex('head_color.jpg');
   headMat.normalMap = avTex('head_normal.jpg', false);
   hairImg = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = AV + 'hair.png'; });
-  const av = (await gltfLoader.loadAsync(AV + 'modelo.json')).scene;
+  const av = await loadAvatarScene();
   let bodyMesh, headMesh;
   av.traverse(o => {
     if (!o.isMesh) return;
@@ -1617,7 +1636,7 @@ async function init() {
   for (const k in worn) if (worn[k] && !itemById(worn[k])) worn[k] = null;
   resize();
   try { await loadAvatar(); }
-  catch { $('#loading').textContent = 'No se pudo cargar la modelo. Revisa tu conexión y vuelve a abrir la página.'; return; }
+  catch (e) { console.error(e); $('#loading').textContent = `No se pudo cargar la modelo (${e?.message || e}). Vuelve a abrir la página.`; return; }
   applyModel();
   renderTabs();
   renderPane();
